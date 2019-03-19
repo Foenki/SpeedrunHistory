@@ -205,22 +205,35 @@ function processResponse(response, status, idx, bestRuns)
 
 function makeChart(bestRuns)
 {
+	var kelly_colors = ['#F3C300', '#875692', '#F38400', '#A1CAF1', '#BE0032', '#C2B280', '#848482', '#008856', '#E68FAC', '#0067A5', '#F99379', '#604E97', '#F6A600', '#B3446C', '#DCD300', '#882D17', '#8DB600', '#654522', '#E25822', '#2B3D26'];
 	var dates = [];
 	var times = [];
 	var runners = [];
+	var uniqueRunners = [];
 	bestRuns.forEach(run =>{
 		dates.push(run.date + ' 12:00');
 		times.push(run.runTime.score());	
 		runners.push(run.playerName);
+		if(!uniqueRunners.includes(run.playerName))
+		{
+			uniqueRunners.push(run.playerName);
+		}
 	});
 	
 	var ctx = document.getElementById('myChart').getContext('2d');
+	var pointsBorderColors = [];
+	var pointsBackgroundColors = [];
 	var myChart = new Chart(ctx, {
 			type: 'line',
 			data: {
 					labels: dates,
 					datasets: [{
 							label: 'WR',
+							borderColor: 'black',
+							backgroundColor: 'black',
+							borderWidth: 2,
+							pointBorderColor: pointsBorderColors,
+							pointBackgroundColor: pointsBackgroundColors,
 							steppedLine: 'before',
 							data: times,
 							fill: false
@@ -232,7 +245,9 @@ function makeChart(bestRuns)
             label: function(tooltip, data) {
               return runners[tooltip.index] + ": " + RunTime.fromScore(tooltip.yLabel).toString();  
 						}
-         }
+         },
+				 mode: 'index',
+				 intersect: false
 				},
 				scales: {
 					xAxes: [{
@@ -262,4 +277,12 @@ function makeChart(bestRuns)
 				}
 			}
 	});
+	
+	for (i = 0; i < myChart.data.datasets[0].data.length; i++)
+	{
+		var color = kelly_colors[uniqueRunners.indexOf(bestRuns[i].playerName) % kelly_colors.length];
+		pointsBorderColors.push(color);
+		pointsBackgroundColors.push(color);
+	}
+	myChart.update();
 }
