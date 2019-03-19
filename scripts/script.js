@@ -1,53 +1,4 @@
 
-var runsURL = 'https://www.speedrun.com/api/v1/runs';
-var gameId = 'o1y9j9v6';
-var resultCount = 200;
-var criteria = 'date';
-var direction = 'asc';
-var embedded = 'players';
-var requestString = runsURL;
-var category = '7kjpl1gk'
-
-requestString += '?game=' + gameId;
-requestString += '&max=' + resultCount;
-requestString += '&orderby=' + criteria;
-requestString += '&direction=' + direction;
-requestString += '&embed=' + embedded;
-requestString += '&status=verified';
-requestString += '&category=' + category;
-
-console.log(requestString);
-
-var request = new XMLHttpRequest()
-request.open('GET', requestString, true)
-request.onload = function()
-{
-  // Begin accessing JSON data here
-  var data = JSON.parse(this.response)
-  if (request.status >= 200 && request.status < 400) {
-    
-		var bestRuns = new Array();
-		data.data.forEach(run =>
-		{
-			var runTime = RunTime.fromString(run.times.primary);
-			var isBetter = (bestRuns.length == 0) || runTime.isBetterThan(bestRuns[bestRuns.length-1].runTime);
-			
-			if(isBetter)
-			{
-				bestRuns.push(new Run(run.players.data[0].names.international, run.date, runTime));
-			}
-		})
-		
-		makeChart(bestRuns);
-		console.log(bestRuns);
-  }
-	else
-	{
-		console.log("error!!!");
-	}
-}
-request.send()
-
 
 class Run
 {
@@ -175,13 +126,92 @@ class RunTime
 	}
 }
 
-makeChart = function(bestRuns)
+var runsURL = 'https://www.speedrun.com/api/v1/runs';
+var gameId = 'o1y9j9v6';//smb 'om1m3625';//celeste :'o1y9j9v6';
+var resultCount = 200;
+var criteria = 'date';
+var direction = 'asc';
+var embedded = 'players';
+var requestString = runsURL;
+var category = '7kjpl1gk';//smb any% 'w20p0zkn';//celeste any% '7kjpl1gk'
+
+requestString += '?game=' + gameId;
+requestString += '&orderby=' + criteria;
+requestString += '&direction=' + direction;
+requestString += '&embed=' + embedded;
+requestString += '&status=verified';
+requestString += '&category=' + category;
+requestString += '&max=' + resultCount;
+
+generateChart();
+function generateChart()
+{
+	var currentIdx = 0;
+	var bestRuns = [];
+	generateRuns(currentIdx, bestRuns);
+}
+
+function generateRuns(idx, bestRuns)
+{
+	var request = new XMLHttpRequest()
+	request.open('GET', requestString + '&offset=' + idx, true)
+	request.onload = function()
+	{
+		processResponse(this.response, this.status, idx, bestRuns);
+	}
+	request.send()
+}
+
+function processResponse(response, status, idx, bestRuns)
+{
+	// Begin accessing JSON data here
+	var data = JSON.parse(response);
+	if (status >= 200 && status < 400) {
+		
+		data.data.forEach(run =>
+		{
+			var runTime = RunTime.fromString(run.times.primary);
+			var isBetter = (bestRuns.length == 0) || runTime.isBetterThan(bestRuns[bestRuns.length-1].runTime);
+			
+			if(isBetter)
+			{
+				var playerName = '';
+				if(run.players.data[0].hasOwnProperty('names'))
+				{
+					playerName = run.players.data[0].names.international;
+				}
+				else
+				{
+					playerName = run.players.data[0].name;
+				}
+				bestRuns.push(new Run(playerName, run.date, runTime));
+			}
+		})
+		
+		if(data.data.length == 200)
+		{
+			generateRuns(idx+200, bestRuns);
+		}
+		else
+		{
+			makeChart(bestRuns);
+		}
+	}
+	else
+	{
+		console.log(status);
+	}
+}
+
+function makeChart(bestRuns)
 {
 	var dates = [];
 	var times = [];
+	var runners = [];
 	bestRuns.forEach(run =>{
 		dates.push(run.date + ' 12:00');
 		times.push(run.runTime.score());	
+		runners.push(run.playerName);
 	});
 	
 	var ctx = document.getElementById('myChart').getContext('2d');
@@ -200,7 +230,7 @@ makeChart = function(bestRuns)
 			 tooltips: {
          callbacks: {
             label: function(tooltip, data) {
-              return RunTime.fromScore(tooltip.yLabel).toString();  
+              return runners[tooltip.index] + ": " + RunTime.fromScore(tooltip.yLabel).toString();  
 						}
          }
 				},
@@ -209,7 +239,7 @@ makeChart = function(bestRuns)
 						type: 'time',
 						time: {
 							parser: 'YYYY-MM-DD HH:mm',
-							unit: 'day',
+							unit: 'month',
 							tooltipFormat: 'YYYY-MM-DD'
 						},
 						scaleLabel: {
@@ -221,7 +251,7 @@ makeChart = function(bestRuns)
 						ticks: {
 							beginAtZero: true,
 							callback: function(value, index, values) {
-							return RunTime.fromScore(value).toString();
+								return RunTime.fromScore(value).toString();
 							}
 						},
 						scaleLabel: {
