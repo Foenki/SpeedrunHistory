@@ -1,7 +1,7 @@
 
 var runsURL = 'https://www.speedrun.com/api/v1/runs';
 var gameId = 'o1y9j9v6';
-var resultCount = 30;
+var resultCount = 200;
 var criteria = 'date';
 var direction = 'asc';
 var embedded = 'players';
@@ -29,7 +29,7 @@ request.onload = function()
 		var bestRuns = new Array();
 		data.data.forEach(run =>
 		{
-			var runTime = new RunTime(run.times.primary);
+			var runTime = RunTime.fromString(run.times.primary);
 			var isBetter = (bestRuns.length == 0) || runTime.isBetterThan(bestRuns[bestRuns.length-1].runTime);
 			
 			if(isBetter)
@@ -38,6 +38,7 @@ request.onload = function()
 			}
 		})
 		
+		makeChart(bestRuns);
 		console.log(bestRuns);
   }
 	else
@@ -60,44 +61,71 @@ class Run
 
 class RunTime
 {
-	constructor(rawTimeString)
+	constructor(hours, minutes, seconds, milliseconds)
 	{
-		this.hours = 0;
-		this.minutes = 0;
-		this.seconds = 0;
-		this.milliseconds = 0;
+		this.hours = hours;
+		this.minutes = minutes;
+		this.seconds = seconds;
+		this.milliseconds = milliseconds;
+	}
+	
+	static fromScore(score)
+	{
+		var currentScore = score;
+		var hours = Math.floor(currentScore / 3600000);
+		currentScore = currentScore - hours * 3600000;
+		var minutes = Math.floor(currentScore / 60000);
+		currentScore = currentScore - minutes * 60000;
+		var seconds = Math.floor(currentScore / 1000); 
+		var milliseconds = currentScore % 1000;
+		return new RunTime(hours, minutes, seconds, milliseconds);
+	}
+	
+	static fromString(rawTimeString)
+	{
+		var hours = 0;
+		var minutes = 0;
+		var seconds = 0;
+		var milliseconds = 0;
 		
 		var hoursSplit = rawTimeString.split(/([0-9]*H)/);
 		if(hoursSplit.length == 3)
 		{
-			this.hours = parseFloat(hoursSplit[1].substring(0, hoursSplit[1].length-1));
+			hours = parseFloat(hoursSplit[1].substring(0, hoursSplit[1].length-1));
 		}
 		
 		var minutesSplit = rawTimeString.split(/([0-9]*M)/);
 		if(minutesSplit.length == 3)
 		{
-			this.minutes = parseFloat(minutesSplit[1].substring(0, minutesSplit[1].length-1));
+			minutes = parseFloat(minutesSplit[1].substring(0, minutesSplit[1].length-1));
 		}
 		
 		var secondsSplit = rawTimeString.split(/([0-9]*\.|[0-9]*S)/);
 		if(secondsSplit.length >= 3)
 		{
-			this.seconds = parseFloat(secondsSplit[1].substring(0, secondsSplit[1].length-1));
+			seconds = parseFloat(secondsSplit[1].substring(0, secondsSplit[1].length-1));
 			if(secondsSplit.length == 5)
 			{
-				this.milliseconds = parseFloat(secondsSplit[3].substring(0, secondsSplit[3].length-1));
+				milliseconds = parseFloat(secondsSplit[3].substring(0, secondsSplit[3].length-1));
 			}
 		}
+		
+		return new RunTime(hours, minutes, seconds, milliseconds);
 	}
 	
-	milliseconds()
+	score()
 	{
-		return this.milliseconds;
+		var result = 0;
+		result += this.hours * 3600000;
+		result += this.minutes * 60000;
+		result += this.seconds * 1000;
+		result += this.milliseconds;
+		return result;
 	}
 	
 	toString()
 	{
-		var result = '[';
+		var result = '';
 		if(this.hours > 0)
 		{
 			result += this.hours + 'h ';
@@ -117,7 +145,6 @@ class RunTime
 		{
 			result += this.milliseconds + 'ms';
 		}
-		result += ']'
 		
 		return result;
 	}
@@ -146,4 +173,63 @@ class RunTime
 		
 		return false;
 	}
+}
+
+makeChart = function(bestRuns)
+{
+	var dates = [];
+	var times = [];
+	bestRuns.forEach(run =>{
+		dates.push(run.date + ' 12:00');
+		times.push(run.runTime.score());	
+	});
+	
+	var ctx = document.getElementById('myChart').getContext('2d');
+	var myChart = new Chart(ctx, {
+			type: 'line',
+			data: {
+					labels: dates,
+					datasets: [{
+							label: 'WR',
+							steppedLine: 'before',
+							data: times,
+							fill: false
+					}]
+			},
+			options: {
+			 tooltips: {
+         callbacks: {
+            label: function(tooltip, data) {
+              return RunTime.fromScore(tooltip.yLabel).toString();  
+						}
+         }
+				},
+				scales: {
+					xAxes: [{
+						type: 'time',
+						time: {
+							parser: 'YYYY-MM-DD HH:mm',
+							unit: 'day',
+							tooltipFormat: 'YYYY-MM-DD'
+						},
+						scaleLabel: {
+							display: true,
+							labelString: 'Date'
+						}
+					}],
+					yAxes: [{
+						ticks: {
+							beginAtZero: true,
+							callback: function(value, index, values) {
+							return RunTime.fromScore(value).toString();
+							}
+						},
+						scaleLabel: {
+							display: true,
+							labelString: 'Time'
+						}
+					}]
+				}
+			}
+	});
 }
