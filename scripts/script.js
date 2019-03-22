@@ -126,22 +126,10 @@ class RunTime
 	}
 }
 
-var runsURL = 'https://www.speedrun.com/api/v1/runs';
-var gameId = 'o1y9j9v6';//smb 'om1m3625';//celeste :'o1y9j9v6';
-var resultCount = 200;
-var criteria = 'date';
-var direction = 'asc';
-var embedded = 'players';
-var requestString = runsURL;
-var category = '7kjpl1gk';//smb any% 'w20p0zkn';//celeste any% '7kjpl1gk'
+var runsURL = 'http://localhost:9237/';
 
-requestString += '?game=' + gameId;
-requestString += '&orderby=' + criteria;
-requestString += '&direction=' + direction;
-requestString += '&embed=' + embedded;
-requestString += '&status=verified';
-requestString += '&category=' + category;
-requestString += '&max=' + resultCount;
+var requestString = runsURL
+requestString += '?game=' + 'Celeste';
 
 generateChart();
 function generateChart()
@@ -154,7 +142,8 @@ function generateChart()
 function generateRuns(idx, bestRuns)
 {
 	var request = new XMLHttpRequest()
-	request.open('GET', requestString + '&offset=' + idx, true)
+	console.log(requestString)
+	request.open('GET', requestString, true)
 	request.onload = function()
 	{
 		processResponse(this.response, this.status, idx, bestRuns);
@@ -168,34 +157,7 @@ function processResponse(response, status, idx, bestRuns)
 	var data = JSON.parse(response);
 	if (status >= 200 && status < 400) {
 		
-		data.data.forEach(run =>
-		{
-			var runTime = RunTime.fromString(run.times.primary);
-			var isBetter = (bestRuns.length == 0) || runTime.isBetterThan(bestRuns[bestRuns.length-1].runTime);
-			
-			if(isBetter)
-			{
-				var playerName = '';
-				if(run.players.data[0].hasOwnProperty('names'))
-				{
-					playerName = run.players.data[0].names.international;
-				}
-				else
-				{
-					playerName = run.players.data[0].name;
-				}
-				bestRuns.push(new Run(playerName, run.date, runTime));
-			}
-		})
-		
-		if(data.data.length == 200)
-		{
-			generateRuns(idx+200, bestRuns);
-		}
-		else
-		{
-			makeChart(bestRuns);
-		}
+		makeChart(data);
 	}
 	else
 	{
@@ -212,7 +174,7 @@ function makeChart(bestRuns)
 	var uniqueRunners = [];
 	bestRuns.forEach(run =>{
 		dates.push(run.date + ' 12:00');
-		times.push(run.runTime.score());	
+		times.push(new RunTime(run.runTime.hours, run.runTime.minutes, run.runTime.seconds, run.runTime.milliseconds).score());	
 		runners.push(run.playerName);
 		if(!uniqueRunners.includes(run.playerName))
 		{
