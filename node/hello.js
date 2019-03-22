@@ -6,6 +6,13 @@ var jsonPort = 9237;
 var http = require('http')
 var url = require('url')
 
+var db;
+MongoClient.connect(databaseURL, {useNewUrlParser:true}, function(err, database) {
+  if(err) throw err;
+
+  db = database;
+});
+
 class Run
 {
 	constructor(playerName, date, runTime)
@@ -137,22 +144,21 @@ var path = require('path')
 var baseDirectory = '../'   // or whatever base directory you want
 
 http.createServer(function (request, response) {
-    try {
-				console.log('Connexion HTTP ! ')
-        var requestUrl = url.parse(request.url)
+	
+	try {
+			var requestUrl = url.parse(request.url)
 
-        // need to use path.normalize so people can't access directories underneath baseDirectory
-        var fsPath = baseDirectory+path.normalize(requestUrl.pathname)
-				console.log('Connexion HTTP ! ' + requestUrl.pathname)
-        var fileStream = fs.createReadStream(fsPath)
-        fileStream.pipe(response)
-        fileStream.on('open', function() {
-						response.writeHead(200, {'Content-Type': 'text/html; charset=utf-8'})
-				})
-        fileStream.on('error',function(e) {
-             response.writeHead(404)     // assume the file doesn't exist
-             response.end()
-        })
+			// need to use path.normalize so people can't access directories underneath baseDirectory
+			var fsPath = baseDirectory+path.normalize(requestUrl.pathname)
+			var fileStream = fs.createReadStream(fsPath)
+			fileStream.pipe(response)
+			fileStream.on('open', function() {
+					response.writeHead(200, {'Content-Type': 'text/html; charset=utf-8'})
+			})
+			fileStream.on('error',function(e) {
+					 response.writeHead(404)     // assume the file doesn't exist
+					 response.end()
+			})
    } catch(e) {
         response.writeHead(500)
         response.end()     // end the response so browsers don't hang
@@ -164,28 +170,22 @@ http.createServer(function (request, response) {
 
 http.createServer(async function (req, res) {
 	
-	console.log("Connexion JSON ! " + req.headers.origin);
 	res.setHeader("Access-Control-Allow-Origin", '*');
 	res.setHeader("Access-Control-Allow-Request-Method", "GET");
 	res.setHeader("Content-Type", "text/plain");
   var q = url.parse(req.url, true).query;
 	var game = getGame(q.game);
-	console.log("check DB")
-	var isInDB = await isInDatabase(game);
-	if(!isInDB)
+
+	var runs = await getRuns();
+	if(!runs)
 	{
 		await registerGameHistory(game);
-		
+		runs = await getRuns();
 	}
 	
-	console.log("get runs")
-	var runs = await getRuns();
-	console.log("writing response")
 	res.write(JSON.stringify(runs));
 	res.end();
-	console.log("response OK")
-
-
+	
 }).listen(jsonPort);
 
 function getGame(gameName)
@@ -196,15 +196,11 @@ function getGame(gameName)
 function isInDatabase(game)
 {
 	return new Promise(resolve=>{
-		MongoClient.connect(databaseURL, function(err, db) {
-			if (err) throw err;
 			var dbo = db.db("mydb");
 			dbo.collection("celesteRuns").findOne({}, function(err, result) {
-				console.log("results" + result)
 				db.close();
 				resolve(result);
 			});
-		});
 	});
 }
 
@@ -288,14 +284,11 @@ function processResponse(data, idx, bestRuns)
 
 function registerRuns(bestRuns)
 {
-	console.log("best runs : " + bestRuns.length)
-	MongoClient.connect(databaseURL, function(err, db) {
+	MongoClient.connect(databaseURL, {useNewUrlParser:true}, function(err, db) {
 	if (err) throw err;
 	var dbo = db.db("mydb");
 	dbo.collection("celesteRuns").insertMany(bestRuns, function(err) {
 			if (err) throw err;
-			console.log("Inserted");
-			db.close();
 		});
 	});
 }
@@ -303,29 +296,22 @@ function registerRuns(bestRuns)
 function getRuns()
 {
 	return new Promise(resolve=>{
-		
-		MongoClient.connect(databaseURL, function(err, db) {
-		if (err) throw err;
 		var dbo = db.db("mydb");
 		dbo.collection("celesteRuns").find({}).toArray(function(err, result) {
-			db.close();
-			console.log("getRuns " + result.length)
 			resolve(result)
-			});
-		}); 
+		});
 	});
 }
 
 function flushDatabase()
 {
-	MongoClient.connect(databaseURL, function(err, db) {
+	MongoClient.connect(databaseURL, {useNewUrlParser:true}, function(err, db) {
   if (err) throw err;
   var dbo = db.db("mydb");
   var myquery = {};
   dbo.collection("celesteRuns").deleteMany(myquery, function(err, obj) {
     if (err) throw err;
     console.log(obj.result.n + " document(s) deleted");
-    db.close();
   });
 });
 }

@@ -131,27 +131,23 @@ var runsURL = 'http://localhost:9237/';
 var requestString = runsURL
 requestString += '?game=' + 'Celeste';
 
-generateChart();
-function generateChart()
-{
-	var currentIdx = 0;
-	var bestRuns = [];
-	generateRuns(currentIdx, bestRuns);
-}
+window.addEventListener("load", function(event) {
+	generateRuns();
+});
 
-function generateRuns(idx, bestRuns)
+function generateRuns()
 {
 	var request = new XMLHttpRequest()
 	console.log(requestString)
 	request.open('GET', requestString, true)
 	request.onload = function()
 	{
-		processResponse(this.response, this.status, idx, bestRuns);
+		processResponse(this.response, this.status);
 	}
 	request.send()
 }
 
-function processResponse(response, status, idx, bestRuns)
+function processResponse(response, status)
 {
 	// Begin accessing JSON data here
 	var data = JSON.parse(response);
