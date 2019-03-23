@@ -5,6 +5,9 @@ var htmlPort = 8080;
 var jsonPort = 9237;
 var http = require('http')
 var url = require('url')
+var fs = require('fs')
+var path = require('path')
+var baseDirectory = '../'
 
 class Run
 {
@@ -22,58 +25,59 @@ MongoClient.connect(databaseURL, {useNewUrlParser:true}, function(err, database)
   if(err) throw err;
 
   db = database;
+	launchListening();
 });
 
-var fs = require('fs')
-var path = require('path')
-var baseDirectory = '../'   // or whatever base directory you want
+function launchListening()
+{
+	http.createServer(handleHTTPRequest).listen(htmlPort)
+	http.createServer(handleRunsRequest).listen(jsonPort)
+	console.log('App running !')
+}
 
-http.createServer(function (request, response) {
+function handleHTTPRequest(request, response)
+{
 	console.log('connexion ! ' + request.url);
 	try {
-			var requestUrl = url.parse(request.url)
+		var requestUrl = url.parse(request.url)
 
-			// need to use path.normalize so people can't access directories underneath baseDirectory
-			var fsPath = baseDirectory+path.normalize(requestUrl.pathname)
-			var fileStream = fs.createReadStream(fsPath)
-			fileStream.pipe(response)
-			fileStream.on('open', function() {
-					response.writeHead(200, {'Content-Type': 'text/html; charset=utf-8'})
-			})
-			fileStream.on('error',function(e) {
-					 response.writeHead(404)     // assume the file doesn't exist
-					 response.end()
-			})
-   } catch(e) {
-        response.writeHead(500)
-        response.end()     // end the response so browsers don't hang
-        console.log(e.stack)
-   }
-	 
-}).listen(htmlPort)
+		// need to use path.normalize so people can't access directories underneath baseDirectory
+		var fsPath = baseDirectory+path.normalize(requestUrl.pathname)
+		var fileStream = fs.createReadStream(fsPath)
+		fileStream.pipe(response)
+		fileStream.on('open', function() {
+				response.writeHead(200, {'Content-Type': 'text/html; charset=utf-8'})
+		})
+		fileStream.on('error',function(e) {
+				 response.writeHead(404)     // assume the file doesn't exist
+				 response.end()
+		})
+ } catch(e) {
+			response.writeHead(500)
+			response.end()     // end the response so browsers don't hang
+			console.log(e.stack)
+ }
+}
 
-
-http.createServer(async function (req, res) {
-	
+async function handleRunsRequest(request, response) 
+{
 	console.log('Connexion JSON')
-	res.setHeader("Access-Control-Allow-Origin", '*');
-	res.setHeader("Access-Control-Allow-Request-Method", "GET");
-	res.setHeader("Content-Type", "text/plain; charset=utf-8");
-  var q = url.parse(req.url, true).query;
+	response.setHeader("Access-Control-Allow-Origin", '*');
+	response.setHeader("Access-Control-Allow-Request-Method", "GET");
+	response.setHeader("Content-Type", "text/plain; charset=utf-8");
+  var q = url.parse(request.url, true).query;
 	var game = getGame(q.game);
 	var runs = await getRuns();
 	if(!runs || runs.length == 0)
 	{
 		console.log("generate runs")
-		runs = await generateRuns();
-		console.log("ok")
-
+		runs = await generateRuns(game);
 	}
 	
-	res.write(JSON.stringify(runs));
-	res.end();
+	response.write(JSON.stringify(runs));
+	response.end();
 	
-}).listen(jsonPort);
+};
 
 function getGame(gameName)
 {
@@ -83,11 +87,11 @@ function getGame(gameName)
 function isInDatabase(game)
 {
 	return new Promise(resolve=>{
-			var dbo = db.db("mydb");
-			dbo.collection("celesteRuns").findOne({}, function(err, result) {
-				db.close();
-				resolve(result);
-			});
+		var dbo = db.db("mydb");
+		dbo.collection("celesteRuns").findOne({}, function(err, result) {
+			db.close();
+			resolve(result);
+		});
 	});
 }
 
@@ -100,55 +104,51 @@ var embedded = 'players';
 var requestString = runsURL;
 var category = '7kjpl1gk';//smb any% 'w20p0zkn';//celeste any% '7kjpl1gk'
 
-function generateRuns(game)
-{
-	return new Promise(resolve => async function(){
-		var idx = 0;
-		var bestRuns = [];
-		var hasFinished = false;
-		
-		while(!hasFinished)
-		{
-			var result = await requestGameRuns(idx);
-			result.forEach(run=>{
-				if(bestRuns.length == 0 || run.runTimeFloat < bestRuns[bestRuns.length-1].runTimeFloat)
-				{
-					bestRuns.push(run);
-				}
-			})
-			hasFinished = (result.length < 200)
-			idx += 200;
-		}
-		
-		await registerRuns(bestRuns);
+async function generateRuns(game)
+{	
+	var idx = 0;
+	var bestRuns = [];
+	var hasFinished = false;
+	while(!hasFinished)
+	{
+		var result = await requestGameRuns(idx);
+		result.forEach(run=>{
+			if(bestRuns.length == 0 || run.runTimeFloat < bestRuns[bestRuns.length-1].runTimeFloat)
+			{
+				bestRuns.push(run);
+			}
+		})
+		hasFinished = (result.length < 200)
+		idx += 200;
+	}
+	await registerRuns(bestRuns);
+	
+	return new Promise(resolve => {
 		resolve(bestRuns);
 	});
 }
 
 async function requestGameRuns(idx)
 {	
-	return new Promise(resolve =>{
-		var options = {
-			method: 'GET',
-			uri: 'https://www.speedrun.com/api/v1/runs',
-			json: true,	
-			qs: {
-				offset: idx,
-				game: 'o1y9j9v6',
-				orderby: 'date',
-				direction: 'asc',
-				max: 200,
-				category: '7kjpl1gk',
-				status: 'verified',
-				embed: 'players'
-			}
+	var options = {
+		method: 'GET',
+		uri: 'https://www.speedrun.com/api/v1/runs',
+		json: true,	
+		qs: {
+			offset: idx,
+			game: 'o1y9j9v6',
+			orderby: 'date',
+			direction: 'asc',
+			max: 200,
+			category: '7kjpl1gk',
+			status: 'verified',
+			embed: 'players'
 		}
-				console.log("request")
+	}
 
+	return new Promise(resolve =>{
 		request(options)
-			.then(function(response){
-				
-				console.log("process response " + response.data.length)
+			.then(function(response){			
 				var runs = [];
 				response.data.forEach(run =>{
 					var runTimeFloat = run.times.primary_t;
@@ -167,7 +167,7 @@ async function requestGameRuns(idx)
 				resolve(runs)
 			})
 			.catch(function (err) {
-				console.log(err)
+				console.log("error status in speedrun request")
 			});
 	});
 }
@@ -197,14 +197,10 @@ function getRuns()
 
 function flushDatabase()
 {
-	MongoClient.connect(databaseURL, {useNewUrlParser:true}, function(err, db) {
-  if (err) throw err;
   var dbo = db.db("mydb");
   var myquery = {};
   dbo.collection("celesteRuns").deleteMany(myquery, function(err, obj) {
-    if (err) throw err;
     console.log(obj.result.n + " document(s) deleted");
   });
-});
 }
 
