@@ -6,6 +6,17 @@ var jsonPort = 9237;
 var http = require('http')
 var url = require('url')
 
+class Run
+{
+	constructor(playerName, date, runTimeF, runTimeS)
+	{
+		this.playerName = playerName;
+		this.date = date;
+		this.runTimeFloat = runTimeF;
+		this.runTimeString = runTimeS;
+	}
+}
+
 var db;
 MongoClient.connect(databaseURL, {useNewUrlParser:true}, function(err, database) {
   if(err) throw err;
@@ -13,138 +24,12 @@ MongoClient.connect(databaseURL, {useNewUrlParser:true}, function(err, database)
   db = database;
 });
 
-class Run
-{
-	constructor(playerName, date, runTime)
-	{
-		this.playerName = playerName;
-		this.date = date;
-		this.runTime = runTime;
-	}
-}
-
-class RunTime
-{
-	constructor(hours, minutes, seconds, milliseconds)
-	{
-		this.hours = hours;
-		this.minutes = minutes;
-		this.seconds = seconds;
-		this.milliseconds = milliseconds;
-	}
-	
-	static fromScore(score)
-	{
-		var currentScore = score;
-		var hours = Math.floor(currentScore / 3600000);
-		currentScore = currentScore - hours * 3600000;
-		var minutes = Math.floor(currentScore / 60000);
-		currentScore = currentScore - minutes * 60000;
-		var seconds = Math.floor(currentScore / 1000); 
-		var milliseconds = currentScore % 1000;
-		return new RunTime(hours, minutes, seconds, milliseconds);
-	}
-	
-	static fromString(rawTimeString)
-	{
-		var hours = 0;
-		var minutes = 0;
-		var seconds = 0;
-		var milliseconds = 0;
-		
-		var hoursSplit = rawTimeString.split(/([0-9]*H)/);
-		if(hoursSplit.length == 3)
-		{
-			hours = parseFloat(hoursSplit[1].substring(0, hoursSplit[1].length-1));
-		}
-		
-		var minutesSplit = rawTimeString.split(/([0-9]*M)/);
-		if(minutesSplit.length == 3)
-		{
-			minutes = parseFloat(minutesSplit[1].substring(0, minutesSplit[1].length-1));
-		}
-		
-		var secondsSplit = rawTimeString.split(/([0-9]*\.|[0-9]*S)/);
-		if(secondsSplit.length >= 3)
-		{
-			seconds = parseFloat(secondsSplit[1].substring(0, secondsSplit[1].length-1));
-			if(secondsSplit.length == 5)
-			{
-				milliseconds = parseFloat(secondsSplit[3].substring(0, secondsSplit[3].length-1));
-			}
-		}
-		
-		return new RunTime(hours, minutes, seconds, milliseconds);
-	}
-	
-	score()
-	{
-		var result = 0;
-		result += this.hours * 3600000;
-		result += this.minutes * 60000;
-		result += this.seconds * 1000;
-		result += this.milliseconds;
-		return result;
-	}
-	
-	toString()
-	{
-		var result = '';
-		if(this.hours > 0)
-		{
-			result += this.hours + 'h ';
-		}
-		
-		if(this.minutes > 0)
-		{
-			result += this.minutes + 'm ';
-		}
-		
-		if(this.seconds > 0)
-		{
-			result += this.seconds + 's ';
-		}
-		
-		if(this.milliseconds > 0)
-		{
-			result += this.milliseconds + 'ms';
-		}
-		
-		return result;
-	}
-	
-	isBetterThan(otherRunTime)
-	{
-		if(this.hours != otherRunTime.hours)
-		{
-			return this.hours < otherRunTime.hours;
-		}
-		
-		if(this.minutes != otherRunTime.minutes)
-		{
-			return this.minutes < otherRunTime.minutes;
-		}
-		
-		if(this.seconds != otherRunTime.seconds)
-		{
-			return this.seconds < otherRunTime.seconds;
-		}
-		
-		if(this.milliseconds != otherRunTime.milliseconds)
-		{
-			return this.milliseconds < otherRunTime.milliseconds;
-		}
-		
-		return false;
-	}
-}
-
 var fs = require('fs')
 var path = require('path')
 var baseDirectory = '../'   // or whatever base directory you want
 
 http.createServer(function (request, response) {
-	
+	console.log('connexion ! ' + request.url);
 	try {
 			var requestUrl = url.parse(request.url)
 
@@ -170,17 +55,19 @@ http.createServer(function (request, response) {
 
 http.createServer(async function (req, res) {
 	
+	console.log('Connexion JSON')
 	res.setHeader("Access-Control-Allow-Origin", '*');
 	res.setHeader("Access-Control-Allow-Request-Method", "GET");
-	res.setHeader("Content-Type", "text/plain");
+	res.setHeader("Content-Type", "text/plain; charset=utf-8");
   var q = url.parse(req.url, true).query;
 	var game = getGame(q.game);
-
 	var runs = await getRuns();
-	if(!runs)
+	if(!runs || runs.length == 0)
 	{
-		await registerGameHistory(game);
-		runs = await getRuns();
+		console.log("generate runs")
+		runs = await generateRuns();
+		console.log("ok")
+
 	}
 	
 	res.write(JSON.stringify(runs));
@@ -204,15 +91,6 @@ function isInDatabase(game)
 	});
 }
 
-function registerGameHistory(game, res)
-{
-	generateRuns(0, [], res);
-}
-
-function getGameHistory(game)
-{
-}
-
 var runsURL = 'https://www.speedrun.com/api/v1/runs';
 var gameId = 'o1y9j9v6';//smb 'om1m3625';//celeste :'o1y9j9v6';
 var resultCount = 200;
@@ -222,73 +100,87 @@ var embedded = 'players';
 var requestString = runsURL;
 var category = '7kjpl1gk';//smb any% 'w20p0zkn';//celeste any% '7kjpl1gk'
 
-function generateRuns(idx, bestRuns, res)
-{	
-	var options = {
-		method: 'GET',
-		uri: 'https://www.speedrun.com/api/v1/runs',
-		json: true,	
-		qs: {
-			offset: idx,
-			game: 'o1y9j9v6',
-			orderby: 'date',
-			direction: 'asc',
-			max: 200,
-			category: '7kjpl1gk',
-			status: 'verified',
-			embed: 'players'
+function generateRuns(game)
+{
+	return new Promise(resolve => async function(){
+		var idx = 0;
+		var bestRuns = [];
+		var hasFinished = false;
+		
+		while(!hasFinished)
+		{
+			var result = await requestGameRuns(idx);
+			result.forEach(run=>{
+				if(bestRuns.length == 0 || run.runTimeFloat < bestRuns[bestRuns.length-1].runTimeFloat)
+				{
+					bestRuns.push(run);
+				}
+			})
+			hasFinished = (result.length < 200)
+			idx += 200;
 		}
-	}
-	
-	request(options)
-		.then(function (response) {
-			processResponse(response, idx, bestRuns);
-		})
-		.catch(function (err) {
-			console.log(err)
-		});
+		
+		await registerRuns(bestRuns);
+		resolve(bestRuns);
+	});
 }
 
-function processResponse(data, idx, bestRuns)
+async function requestGameRuns(idx)
 {	
-	console.log("process response " + data.data.length)
-	data.data.forEach(run =>
-	{
-		var runTime = RunTime.fromString(run.times.primary);
-		var isBetter = (bestRuns.length == 0) || runTime.isBetterThan(bestRuns[bestRuns.length-1].runTime);
-		
-		if(isBetter)
-		{
-			var playerName = '';
-			if(run.players.data[0].hasOwnProperty('names'))
-			{
-				playerName = run.players.data[0].names.international;
+	return new Promise(resolve =>{
+		var options = {
+			method: 'GET',
+			uri: 'https://www.speedrun.com/api/v1/runs',
+			json: true,	
+			qs: {
+				offset: idx,
+				game: 'o1y9j9v6',
+				orderby: 'date',
+				direction: 'asc',
+				max: 200,
+				category: '7kjpl1gk',
+				status: 'verified',
+				embed: 'players'
 			}
-			else
-			{
-				playerName = run.players.data[0].name;
-			}
-			bestRuns.push(new Run(playerName, run.date, runTime));
 		}
-	})
-	
-	if(data.data.length == 200)
-	{
-		generateRuns(idx+200, bestRuns);
-	}
-	else
-	{
-		registerRuns(bestRuns);
-	}
+				console.log("request")
+
+		request(options)
+			.then(function(response){
+				
+				console.log("process response " + response.data.length)
+				var runs = [];
+				response.data.forEach(run =>{
+					var runTimeFloat = run.times.primary_t;
+					var runTimeString = run.times.primary;
+					var playerName = '';
+					if(run.players.data[0].hasOwnProperty('names'))
+					{
+						playerName = run.players.data[0].names.international;
+					}
+					else
+					{
+						playerName = run.players.data[0].name;
+					}
+					runs.push(new Run(playerName, run.date, runTimeFloat, runTimeString));
+				})
+				resolve(runs)
+			})
+			.catch(function (err) {
+				console.log(err)
+			});
+	});
 }
+
 
 function registerRuns(bestRuns)
 {
-	MongoClient.connect(databaseURL, {useNewUrlParser:true}, function(err, db) {
-	if (err) throw err;
-	var dbo = db.db("mydb");
-	dbo.collection("celesteRuns").insertMany(bestRuns, function(err) {
+	return new Promise(resolve => {
+		var dbo = db.db("mydb");
+		dbo.collection("celesteRuns").insertMany(bestRuns, function(err) {
 			if (err) throw err;
+			console.log('ok')
+			resolve()
 		});
 	});
 }
