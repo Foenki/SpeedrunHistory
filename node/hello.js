@@ -1,5 +1,6 @@
 var MongoClient = require('mongodb').MongoClient;
 var databaseURL = "mongodb://localhost:27017/";
+var speedrunURLRoot = 'https://www.speedrun.com/api/v1/';
 const request = require('request-promise')
 var htmlPort = 8080;
 var jsonPort = 9237;
@@ -11,12 +12,33 @@ var baseDirectory = '../'
 
 class Run
 {
-	constructor(playerName, date, runTimeF, runTimeS)
+	constructor(gameId, categoryId, playerName, date, runTimeF, runTimeS)
 	{
+		this.gameId = gameId;
+		this.categoryId = categoryId;
 		this.playerName = playerName;
 		this.date = date;
 		this.runTimeFloat = runTimeF;
 		this.runTimeString = runTimeS;
+	}
+}
+
+class Game
+{
+	constructor(name, id)
+	{
+		this.name = name;
+		this.id = id;
+	}
+}
+
+class Category
+{
+	constructor(name, id, gameId)
+	{
+		this.name = name;
+		this.id = id;
+		this.gameId = gameId;
 	}
 }
 
@@ -61,57 +83,146 @@ function handleHTTPRequest(request, response)
 
 async function handleRunsRequest(request, response) 
 {
-	console.log('Connexion JSON')
 	response.setHeader("Access-Control-Allow-Origin", '*');
 	response.setHeader("Access-Control-Allow-Request-Method", "GET");
 	response.setHeader("Content-Type", "text/plain; charset=utf-8");
   var q = url.parse(request.url, true).query;
-	var game = getGame(q.game);
-	var runs = await getRuns();
-	if(!runs || runs.length == 0)
+	
+	var gameName = q.game;
+	var categoryName = q.category;
+	console.log('Connexion JSON : ' + gameName + ' - ' + categoryName)
+
+	var gameCategory = await getGameAndCategory(gameName, categoryName);
+	if(!gameCategory[0] || !gameCategory[1])
 	{
-		console.log("generate runs")
-		runs = await generateRuns(game);
+		gameCategory = await generateGameAndCategory(gameName, categoryName)
+		runs = await generateRuns(gameCategory[0].id, gameCategory[1].id)
+	}
+	else
+	{
+		var runs = await getRuns(gameCategory[0].id, gameCategory[1].id);
+		if(!runs || runs.length == 0)
+		{
+			runs = await generateRuns(game);
+		}
 	}
 	
 	response.write(JSON.stringify(runs));
 	response.end();
-	
 };
 
-function getGame(gameName)
+function getGameAndCategory(gameName, categoryName)
 {
-	
-}
-
-function isInDatabase(game)
-{
+	var gameRequest = {name : gameName}
+	var dbo = db.db("mydb");
 	return new Promise(resolve=>{
-		var dbo = db.db("mydb");
-		dbo.collection("celesteRuns").findOne({}, function(err, result) {
-			db.close();
-			resolve(result);
+		dbo.collection("games").findOne(gameRequest, function(err, gameResult){
+			
+			if(gameResult)
+			{
+				var categoryRequest = {gameId:gameResult.id, name:categoryName};
+				dbo.collection("categories").findOne(categoryRequest, function(err, categoryResult){
+					
+					resolve([gameResult, categoryResult]);
+				});
+			}
+			else
+			{
+				var categoryResult
+				resolve([gameResult, categoryResult]);
+			}
+
 		});
 	});
 }
 
-var runsURL = 'https://www.speedrun.com/api/v1/runs';
-var gameId = 'o1y9j9v6';//smb 'om1m3625';//celeste :'o1y9j9v6';
+async function generateGameAndCategory(gameName, categoryName)
+{
+	var gameCategories = await requestGame(gameName)
+	Promise.all([registerGame(gameCategories[0]), registerCategories(gameCategories[1])]);
+	
+	var category;
+	for(var i = 0; !category && i < gameCategories[1].length; ++i)
+	{
+		if(gameCategories[1][i].name == categoryName)
+		{
+			category = gameCategories[1][i]
+		}
+	}
+	
+	
+	return new Promise(resolve => {
+		resolve([gameCategories[0], category]);
+	});
+}
+
+function registerGame(game)
+{
+	var dbo = db.db("mydb");
+	return new Promise(resolve => {
+		dbo.collection("games").insertOne(game, function(err) {
+			if (err) throw err;
+			resolve()
+		});
+	});
+}
+
+function registerCategories(categories)
+{
+	var dbo = db.db("mydb");
+	return new Promise(resolve => {
+		dbo.collection("categories").insertMany(categories, function(err) {
+			if (err) throw err;
+			resolve()
+		});
+	});
+}
+
+ function requestGame(gameName)
+{	
+	var options = {
+		method: 'GET',
+		uri: speedrunURLRoot + 'games',
+		json: true,	
+		qs: {
+			name: gameName,
+			max: 1,
+			embed: 'categories'
+		}
+	}
+	
+	return new Promise(resolve =>{
+		request(options)
+			.then(function(response){
+				var game = response.data[0];
+				var id = game.id;
+				var name = game.names.international;
+				var categories = [];
+				game.categories.data.forEach(category => {
+					var categoryName = category.name;
+					var categoryId = category.id;
+					categories.push(new Category(categoryName, categoryId, id));
+				});
+				var gameResult = new Game(name, id)
+				resolve([gameResult, categories]);
+			})
+	});
+}
+
 var resultCount = 200;
 var criteria = 'date';
 var direction = 'asc';
 var embedded = 'players';
-var requestString = runsURL;
-var category = '7kjpl1gk';//smb any% 'w20p0zkn';//celeste any% '7kjpl1gk'
 
-async function generateRuns(game)
+async function generateRuns(gameId, categoryId)
 {	
 	var idx = 0;
 	var bestRuns = [];
 	var hasFinished = false;
+	
 	while(!hasFinished)
 	{
-		var result = await requestGameRuns(idx);
+		var result = await requestGameRuns(gameId, categoryId, idx);
 		result.forEach(run=>{
 			if(bestRuns.length == 0 || run.runTimeFloat < bestRuns[bestRuns.length-1].runTimeFloat)
 			{
@@ -128,19 +239,19 @@ async function generateRuns(game)
 	});
 }
 
-async function requestGameRuns(idx)
+async function requestGameRuns(gameId, categoryId, idx)
 {	
 	var options = {
 		method: 'GET',
-		uri: 'https://www.speedrun.com/api/v1/runs',
+		uri: speedrunURLRoot + 'runs',
 		json: true,	
 		qs: {
 			offset: idx,
-			game: 'o1y9j9v6',
+			game: gameId,
 			orderby: 'date',
 			direction: 'asc',
 			max: 200,
-			category: '7kjpl1gk',
+			category: categoryId,
 			status: 'verified',
 			embed: 'players'
 		}
@@ -162,7 +273,7 @@ async function requestGameRuns(idx)
 					{
 						playerName = run.players.data[0].name;
 					}
-					runs.push(new Run(playerName, run.date, runTimeFloat, runTimeString));
+					runs.push(new Run(gameId, categoryId, playerName, run.date, runTimeFloat, runTimeString));
 				})
 				resolve(runs)
 			})
@@ -177,7 +288,7 @@ function registerRuns(bestRuns)
 {
 	return new Promise(resolve => {
 		var dbo = db.db("mydb");
-		dbo.collection("celesteRuns").insertMany(bestRuns, function(err) {
+		dbo.collection("runs").insertMany(bestRuns, function(err) {
 			if (err) throw err;
 			console.log('ok')
 			resolve()
@@ -185,11 +296,12 @@ function registerRuns(bestRuns)
 	});
 }
 
-function getRuns()
+function getRuns(gameId, categoryId)
 {
+	var dbo = db.db("mydb");
+	var request = {gameId:gameId, categoryId:categoryId}
 	return new Promise(resolve=>{
-		var dbo = db.db("mydb");
-		dbo.collection("celesteRuns").find({}).toArray(function(err, result) {
+		dbo.collection("runs").find(request).sort({date:1}).toArray(function(err, result) {
 			resolve(result)
 		});
 	});
@@ -199,7 +311,13 @@ function flushDatabase()
 {
   var dbo = db.db("mydb");
   var myquery = {};
-  dbo.collection("celesteRuns").deleteMany(myquery, function(err, obj) {
+  dbo.collection("games").deleteMany(myquery, function(err, obj) {
+    console.log(obj.result.n + " document(s) deleted");
+  });
+  dbo.collection("categories").deleteMany(myquery, function(err, obj) {
+    console.log(obj.result.n + " document(s) deleted");
+  });
+  dbo.collection("runs").deleteMany(myquery, function(err, obj) {
     console.log(obj.result.n + " document(s) deleted");
   });
 }

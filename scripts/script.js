@@ -1,16 +1,16 @@
 ﻿var runsURL = 'http://wrhistory.ddns.net:3134/';
 
-var requestString = runsURL
-requestString += '?game=' + 'Celeste';
+function launch()
+{
+	var game = document.getElementById('game').value;
+	var category = document.getElementById('category').value;
+	generateRuns(game, category)
+}
 
-window.addEventListener("load", function(event) {
-	generateRuns();
-});
-
-function generateRuns()
+function generateRuns(game, category)
 {
 	var request = new XMLHttpRequest()
-	console.log(requestString)
+	var requestString = runsURL + '?game=' + game + '&category=' + category;
 	request.open('GET', requestString, true)
 	request.onload = function()
 	{
@@ -46,9 +46,9 @@ function displayString(duration)
 		result += duration.minutes() + 'm ';
 	}
 	
-	if(duration.seconds > 0)
+	if(duration.seconds() > 0)
 	{
-		result += duration.seconds + 's ';
+		result += duration.seconds() + 's ';
 	}
 	
 	if(duration.milliseconds() > 0)
@@ -60,6 +60,7 @@ function displayString(duration)
 }
 
 var kelly_colors = ['#F3C300', '#875692', '#F38400', '#A1CAF1', '#BE0032', '#C2B280', '#848482', '#008856', '#E68FAC', '#0067A5', '#F99379', '#604E97', '#F6A600', '#B3446C', '#DCD300', '#882D17', '#8DB600', '#654522', '#E25822', '#2B3D26'];
+var myChart;
 function makeChart(bestRuns)
 {
 	var dates = [];
@@ -82,8 +83,12 @@ function makeChart(bestRuns)
 		pointsBackgroundColors.push(color);
 	});
 	
+	if(myChart)
+	{
+		myChart.destroy();
+	}
 	var ctx = document.getElementById('myChart').getContext('2d');
-	var myChart = new Chart(ctx, {
+	myChart = new Chart(ctx, {
 			type: 'line',
 			data: {
 					labels: dates,
