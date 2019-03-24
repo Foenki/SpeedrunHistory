@@ -47,6 +47,7 @@ MongoClient.connect(databaseURL, {useNewUrlParser:true}, function(err, database)
   if(err) throw err;
 
   db = database;
+	//flushDatabase();
 	launchListening();
 });
 
@@ -103,7 +104,7 @@ async function handleRunsRequest(request, response)
 		var runs = await getRuns(gameCategory[0].id, gameCategory[1].id);
 		if(!runs || runs.length == 0)
 		{
-			runs = await generateRuns(game);
+			runs = await generateRuns(gameCategory[0].id, gameCategory[1].id);
 		}
 	}
 	
@@ -199,9 +200,12 @@ function registerCategories(categories)
 				var name = game.names.international;
 				var categories = [];
 				game.categories.data.forEach(category => {
-					var categoryName = category.name;
-					var categoryId = category.id;
-					categories.push(new Category(categoryName, categoryId, id));
+					if(category.type == 'per-game')
+					{
+						var categoryName = category.name;
+						var categoryId = category.id;
+						categories.push(new Category(categoryName, categoryId, id));
+					}
 				});
 				var gameResult = new Game(name, id)
 				resolve([gameResult, categories]);
@@ -224,7 +228,7 @@ async function generateRuns(gameId, categoryId)
 	{
 		var result = await requestGameRuns(gameId, categoryId, idx);
 		result.forEach(run=>{
-			if(bestRuns.length == 0 || run.runTimeFloat < bestRuns[bestRuns.length-1].runTimeFloat)
+			if(run.playerName && run.date != null && (bestRuns.length == 0 || run.runTimeFloat < bestRuns[bestRuns.length-1].runTimeFloat))
 			{
 				bestRuns.push(run);
 			}
@@ -265,21 +269,21 @@ async function requestGameRuns(gameId, categoryId, idx)
 					var runTimeFloat = run.times.primary_t;
 					var runTimeString = run.times.primary;
 					var playerName = '';
-					if(run.players.data[0].hasOwnProperty('names'))
+					if(run.players.data[0])
 					{
-						playerName = run.players.data[0].names.international;
+						if(run.players.data[0].hasOwnProperty('names'))
+						{
+							playerName = run.players.data[0].names.international;
+						}
+						else
+						{
+							playerName = run.players.data[0].name;
+						}
 					}
-					else
-					{
-						playerName = run.players.data[0].name;
-					}
-					runs.push(new Run(gameId, categoryId, playerName, run.date, runTimeFloat, runTimeString));
+					runs.push(new Run(gameId, categoryId, playerName, run.date, runTimeFloat, runTimeString));						
 				})
 				resolve(runs)
 			})
-			.catch(function (err) {
-				console.log("error status in speedrun request")
-			});
 	});
 }
 
@@ -289,8 +293,6 @@ function registerRuns(bestRuns)
 	return new Promise(resolve => {
 		var dbo = db.db("mydb");
 		dbo.collection("runs").insertMany(bestRuns, function(err) {
-			if (err) throw err;
-			console.log('ok')
 			resolve()
 		});
 	});

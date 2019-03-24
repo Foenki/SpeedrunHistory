@@ -93,7 +93,6 @@ function makeChart(bestRuns)
 			data: {
 					labels: dates,
 					datasets: [{
-							label: 'WR',
 							borderColor: 'black',
 							backgroundColor: 'black',
 							borderWidth: 2,
@@ -105,7 +104,10 @@ function makeChart(bestRuns)
 					}]
 			},
 			options: {
-			 tooltips: {
+				legend: {
+					display : false
+				},
+				tooltips: {
          callbacks: {
             label: function(tooltip, data) {
               return runners[tooltip.index] + ": " + displayString(moment.duration(tooltip.yLabel, 'seconds'));  
