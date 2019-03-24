@@ -4,22 +4,25 @@
     <meta charset="utf-8" />
     <title>Speedrun History</title>
 		<link rel="shortcut icon" type="image/x-icon" href="images/favicon.ico" />
-  </head>
+		<link rel="stylesheet" type="text/css" href="style/style.css">
+	</head>
 
   <body>
     <div id="root">
 			<div class="input-group" id="buttons">
 				<input type="text" id="game" placeholder="Game">
 				<input type="text" id="category" placeholder="Category">
-				<button class="id="launchButton" onClick="launch();">OK</button>
+				<button id="launchButton" onClick="launch();">OK</button>
+				<img src="images/loading.gif" id="loading" style="display:none"/>
 			</div>
 			
-			<canvas id="myChart"></canvas>
+			<div id="content">
+				<canvas id="myChart"></canvas>
+			</div>
 		</div>
   </body>
-</html>
-    <script src="scripts/moment.min.js"></script>
-    <script src="scripts/Chart.min.js"></script>
-    <script src="scripts/script.js"></script>
-  </body>
+
+	<script src="scripts/moment.min.js"></script>
+  <script src="scripts/Chart.min.js"></script>
+  <script src="scripts/script.js"></script>
 </html>

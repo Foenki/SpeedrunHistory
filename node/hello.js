@@ -60,7 +60,6 @@ function launchListening()
 
 function handleHTTPRequest(request, response)
 {
-	console.log('connexion ! ' + request.url);
 	try {
 		var requestUrl = url.parse(request.url)
 
